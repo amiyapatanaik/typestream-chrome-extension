@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1400, initial-scale=1.0">
+  <title>Typestream Voice — Marquee Promo Tile (1400×560)</title>
+  <style>
+    @font-face {
+      font-family: 'Geist Sans';
+      src: url('https://cdn.jsdelivr.net/npm/@fontsource/geist-sans@5.0.1/files/geist-sans-latin-400-normal.woff2') format('woff2');
+      font-weight: 400;
+      font-style: normal;
+    }
+    @font-face {
+      font-family: 'Geist Sans';
+      src: url('https://cdn.jsdelivr.net/npm/@fontsource/geist-sans@5.0.1/files/geist-sans-latin-500-normal.woff2') format('woff2');
+      font-weight: 500;
+      font-style: normal;
+    }
+    @font-face {
+      font-family: 'Geist Sans';
+      src: url('https://cdn.jsdelivr.net/npm/@fontsource/geist-sans@5.0.1/files/geist-sans-latin-600-normal.woff2') format('woff2');
+      font-weight: 600;
+      font-style: normal;
+    }
+    @font-face {
+      font-family: 'Geist Sans';
+      src: url('https://cdn.jsdelivr.net/npm/@fontsource/geist-sans@5.0.1/files/geist-sans-latin-700-normal.woff2') format('woff2');
+      font-weight: 700;
+      font-style: normal;
+    }
+    @font-face {
+      font-family: 'Geist Mono';
+      src: url('https://cdn.jsdelivr.net/npm/@fontsource/geist-mono@5.0.1/files/geist-mono-latin-400-normal.woff2') format('woff2');
+      font-weight: 400;
+      font-style: normal;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 1400px;
+      height: 560px;
+      overflow: hidden;
+      font-family: 'Geist Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .canvas {
+      position: relative;
+      width: 1400px;
+      height: 560px;
+      background: #09090b;
+      overflow: hidden;
+      color: #fafafa;
+      display: flex;
+    }
+
+    /* Background effects */
+    .glow-top {
+      position: absolute;
+      width: 700px;
+      height: 500px;
+      top: -200px;
+      left: -100px;
+      background: radial-gradient(ellipse, rgba(99, 102, 241, 0.3) 0%, transparent 65%);
+      pointer-events: none;
+    }
+
+    .glow-right {
+      position: absolute;
+      width: 600px;
+      height: 600px;
+      top: -100px;
+      right: -150px;
+      background: radial-gradient(ellipse, rgba(139, 92, 246, 0.25) 0%, transparent 60%);
+      pointer-events: none;
+    }
+
+    .glow-bottom {
+      position: absolute;
+      width: 500px;
+      height: 300px;
+      bottom: -100px;
+      left: 40%;
+      background: radial-gradient(ellipse, rgba(56, 189, 248, 0.12) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .grid {
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+      background-size: 40px 40px;
+      mask-image: radial-gradient(ellipse 90% 90% at 40% 50%, black 10%, transparent 100%);
+      pointer-events: none;
+    }
+
+    /* Left panel — copy */
+    .copy-panel {
+      position: relative;
+      z-index: 2;
+      flex: 0 0 580px;
+      padding: 64px 0 64px 72px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .brand-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 36px;
+    }
+
+    .logo {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      background: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 12px 32px rgba(99, 102, 241, 0.4);
+    }
+
+    .logo svg {
+      width: 30px;
+      height: 30px;
+    }
+
+    .brand-label {
+      font-size: 14px;
+      font-weight: 500;
+      color: #a1a1aa;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .headline {
+      font-size: 52px;
+      font-weight: 700;
+      letter-spacing: -0.04em;
+      line-height: 1.08;
+      margin-bottom: 20px;
+    }
+
+    .headline .line2 {
+      background: linear-gradient(135deg, #a5b4fc 0%, #c4b5fd 40%, #7dd3fc 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .description {
+      font-size: 18px;
+      line-height: 1.55;
+      color: #d4d4d8;
+      max-width: 460px;
+      margin-bottom: 32px;
+    }
+
+    .features {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .feature {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 15px;
+      color: #e4e4e7;
+    }
+
+    .feature-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: rgba(99, 102, 241, 0.15);
+      border: 1px solid rgba(129, 140, 248, 0.25);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 14px;
+    }
+
+    .badge-row {
+      display: flex;
+      gap: 10px;
+      margin-top: 36px;
+    }
+
+    .badge {
+      font-size: 12px;
+      font-weight: 500;
+      color: #fafafa;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 999px;
+      padding: 8px 16px;
+      backdrop-filter: blur(8px);
+    }
+
+    .badge.accent {
+      background: linear-gradient(135deg, rgba(99, 102, 241, 0.3), rgba(139, 92, 246, 0.2));
+      border-color: rgba(129, 140, 248, 0.35);
+    }
+
+    /* Right panel — browser mockup */
+    .visual-panel {
+      position: relative;
+      z-index: 2;
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 48px 72px 48px 24px;
+    }
+
+    .browser {
+      width: 100%;
+      max-width: 720px;
+      border-radius: 16px;
+      background: #18181b;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow:
+        0 40px 80px rgba(0, 0, 0, 0.5),
+        0 0 0 1px rgba(255, 255, 255, 0.05) inset,
+        0 0 80px rgba(99, 102, 241, 0.15);
+      overflow: hidden;
+    }
+
+    .browser-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 18px;
+      background: #27272a;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    .dot.red { background: #ef4444; }
+    .dot.yellow { background: #eab308; }
+    .dot.green { background: #22c55e; }
+
+    .url-bar {
+      flex: 1;
+      margin-left: 12px;
+      height: 28px;
+      border-radius: 6px;
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      display: flex;
+      align-items: center;
+      padding: 0 12px;
+      font-family: 'Geist Mono', monospace;
+      font-size: 11px;
+      color: #71717a;
+    }
+
+    .browser-content {
+      position: relative;
+      padding: 40px 48px 80px;
+      min-height: 320px;
+      background:
+        linear-gradient(180deg, #1c1c1f 0%, #141416 100%);
+    }
+
+    .page-title {
+      font-size: 22px;
+      font-weight: 600;
+      color: #fafafa;
+      margin-bottom: 8px;
+      letter-spacing: -0.02em;
+    }
+
+    .page-sub {
+      font-size: 13px;
+      color: #71717a;
+      margin-bottom: 28px;
+    }
+
+    .text-field {
+      width: 100%;
+      min-height: 120px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 16px 18px;
+      font-size: 14px;
+      line-height: 1.6;
+      color: #d4d4d8;
+    }
+
+    .text-field .cursor {
+      display: inline-block;
+      width: 2px;
+      height: 16px;
+      background: #818cf8;
+      vertical-align: text-bottom;
+      margin-left: 2px;
+      animation: blink 1s step-end infinite;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+
+    /* Dictation overlay pill */
+    .dictation-pill {
+      position: absolute;
+      bottom: 36px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 22px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.95);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      box-shadow:
+        0 20px 50px rgba(99, 102, 241, 0.35),
+        0 0 0 1px rgba(99, 102, 241, 0.1);
+    }
+
+    .pill-mic {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .pill-mic svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    .pill-waveform {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      height: 24px;
+    }
+
+    .pill-bar {
+      width: 3px;
+      border-radius: 2px;
+      background: linear-gradient(180deg, #818cf8, #6366f1);
+      animation: wave 1s ease-in-out infinite;
+    }
+
+    .pill-bar:nth-child(1) { height: 8px; animation-delay: 0s; }
+    .pill-bar:nth-child(2) { height: 16px; animation-delay: 0.12s; }
+    .pill-bar:nth-child(3) { height: 22px; animation-delay: 0.24s; }
+    .pill-bar:nth-child(4) { height: 14px; animation-delay: 0.08s; }
+    .pill-bar:nth-child(5) { height: 20px; animation-delay: 0.18s; }
+    .pill-bar:nth-child(6) { height: 10px; animation-delay: 0.28s; }
+
+    @keyframes wave {
+      0%, 100% { transform: scaleY(0.45); opacity: 0.65; }
+      50% { transform: scaleY(1); opacity: 1; }
+    }
+
+    .pill-label {
+      font-size: 13px;
+      font-weight: 500;
+      color: #09090b;
+      white-space: nowrap;
+    }
+
+    /* Extension popup preview */
+    .popup-preview {
+      position: absolute;
+      top: 24px;
+      right: -20px;
+      width: 200px;
+      border-radius: 12px;
+      background: #ffffff;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      box-shadow: 0 24px 48px rgba(0, 0, 0, 0.4);
+      overflow: hidden;
+    }
+
+    .popup-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 14px;
+      border-bottom: 1px solid #e4e4e7;
+      background: #fff;
+    }
+
+    .popup-header .mini-logo {
+      width: 20px;
+      height: 20px;
+      border-radius: 5px;
+      background: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .popup-header .mini-logo svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    .popup-header span {
+      font-size: 12px;
+      font-weight: 600;
+      color: #09090b;
+    }
+
+    .popup-body {
+      padding: 10px 12px 14px;
+      background: #fafafa;
+    }
+
+    .history-item {
+      background: #fff;
+      border: 1px solid #e4e4e7;
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+    }
+
+    .history-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .history-text {
+      font-size: 10px;
+      color: #3f3f46;
+      line-height: 1.45;
+      margin-bottom: 4px;
+    }
+
+    .history-time {
+      font-size: 9px;
+      color: #a1a1aa;
+    }
+  </style>
+</head>
+<body>
+  <div class="canvas">
+    <div class="glow-top"></div>
+    <div class="glow-right"></div>
+    <div class="glow-bottom"></div>
+    <div class="grid"></div>
+
+    <div class="copy-panel">
+      <div class="brand-row">
+        <div class="logo">
+          <svg viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M64 24a12 12 0 0 0-12 12v28a12 12 0 0 0 24 0V36a12 12 0 0 0-12-12Z" fill="#6366f1"/>
+            <path d="M88 48v16a24 24 0 0 1-48 0V48" stroke="#6366f1" stroke-width="6" stroke-linecap="round"/>
+            <line x1="64" y1="80" x2="64" y2="96" stroke="#6366f1" stroke-width="6" stroke-linecap="round"/>
+            <line x1="52" y1="96" x2="76" y2="96" stroke="#6366f1" stroke-width="6" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="brand-label">Typestream Voice</div>
+      </div>
+
+      <h1 class="headline">
+        Voice dictation<br>
+        <span class="line2">for every tab.</span>
+      </h1>
+
+      <p class="description">
+        Press a hotkey, speak naturally, and watch your words appear instantly — in any text field, on any website.
+      </p>
+
+      <div class="features">
+        <div class="feature">
+          <div class="feature-icon">⚡</div>
+          <span>Sub-second transcription with Talk-Then-Send architecture</span>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">🔒</div>
+          <span>API keys &amp; history stored locally — zero data retention</span>
+        </div>
+        <div class="feature">
+          <div class="feature-icon">💰</div>
+          <span>Pay-as-you-go pricing — no $15/month subscription</span>
+        </div>
+      </div>
+
+      <div class="badge-row">
+        <span class="badge accent">Open Source</span>
+        <span class="badge">Powered by typestream.dev</span>
+        <span class="badge">Chrome Extension</span>
+      </div>
+    </div>
+
+    <div class="visual-panel">
+      <div class="browser">
+        <div class="browser-bar">
+          <div class="dot red"></div>
+          <div class="dot yellow"></div>
+          <div class="dot green"></div>
+          <div class="url-bar">mail.google.com — Compose</div>
+        </div>
+
+        <div class="browser-content">
+          <div class="page-title">New Message</div>
+          <div class="page-sub">To: team@company.com</div>
+          <div class="text-field">
+            Hi everyone — just wanted to follow up on yesterday's meeting. I think we should move forward with the new timeline and schedule a kickoff for next week.<span class="cursor"></span>
+          </div>
+
+          <div class="dictation-pill">
+            <div class="pill-mic">
+              <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z" fill="#fff"/>
+                <path d="M18 9v3a6 6 0 0 1-12 0V9" stroke="#fff" stroke-width="1.75" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <div class="pill-waveform" aria-hidden="true">
+              <div class="pill-bar"></div>
+              <div class="pill-bar"></div>
+              <div class="pill-bar"></div>
+              <div class="pill-bar"></div>
+              <div class="pill-bar"></div>
+              <div class="pill-bar"></div>
+            </div>
+            <span class="pill-label">Listening…</span>
+          </div>
+        </div>
+
+        <div class="popup-preview">
+          <div class="popup-header">
+            <div class="mini-logo">
+              <svg viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M64 24a12 12 0 0 0-12 12v28a12 12 0 0 0 24 0V36a12 12 0 0 0-12-12Z" fill="#6366f1"/>
+                <path d="M88 48v16a24 24 0 0 1-48 0V48" stroke="#6366f1" stroke-width="4" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <span>Typestream Voice</span>
+          </div>
+          <div class="popup-body">
+            <div class="history-item">
+              <div class="history-text">Follow up on yesterday's meeting and schedule a kickoff…</div>
+              <div class="history-time">Just now</div>
+            </div>
+            <div class="history-item">
+              <div class="history-text">Can we push the deadline to Friday?</div>
+              <div class="history-time">3 min ago</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

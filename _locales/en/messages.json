@@ -1,10 +1,10 @@
 {
   "appName": {
-    "message": "Typestream",
+    "message": "Typestream Voice: AI Speech to Text Dictation",
     "description": "Extension name"
   },
   "appDesc": {
-    "message": "Ultra-low latency voice dictation powered by Typestream. Speak naturally and insert text anywhere in your browser.",
+    "message": "Fast, accurate, and private AI voice typing (Speech-to-Text). Pay-as-you-go dictation for any website.",
     "description": "Extension description"
   }
 }

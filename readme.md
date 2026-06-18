@@ -6,6 +6,8 @@
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![Powered by Typestream](https://img.shields.io/badge/Powered%20by-Typestream.dev-indigo)
 
+![Typestream Voice — AI speech-to-text dictation for every tab](assets/chrome-wide.png)
+
 ---
 
 ## 🛑 Stop paying $15/month for Voice Dictation

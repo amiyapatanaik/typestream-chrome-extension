@@ -19,8 +19,7 @@ self.addEventListener('unhandledrejection', (e) => {
 
 const MIN_RECORDING_MS = 800;
 const TOGGLE_DEBOUNCE_MS = 400;
-const START_GRACE_MS = 400;
-const POST_TOGGLE_COOLDOWN_MS = 300;
+const MIC_READY_TIMEOUT_MS = 3000;
 
 const state = {
   phase: 'idle', // idle | starting | recording | processing | cancelling
@@ -39,8 +38,7 @@ let micBootStarted = false;
 let finishInFlight = false;
 let processingTimeout = null;
 let stopInFlight = false;
-let lastShortcutToggleAt = 0;
-let toggleCooldownUntil = 0;
+let lastStartShortcutAt = 0;
 let toggleQueue = Promise.resolve();
 
 async function ensureOffscreen() {
@@ -180,7 +178,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true;
     }
     sendResponse({ received: true });
-    void handleShortcutToggle(tabId).catch((err) => log('START_DICTATION error:', err.message));
+    if (isActivePhase()) {
+      void handleShortcutStop().catch((err) => log('START_DICTATION stop error:', err.message));
+    } else {
+      void handleShortcutStart(tabId).catch((err) => log('START_DICTATION error:', err.message));
+    }
     return true;
   }
   if (msg.type === MSG.GET_SHORTCUT_LABEL) {
@@ -434,57 +436,60 @@ async function cancelDictation() {
   await cleanup();
 }
 
-async function stopDictation({ force = false } = {}) {
-  if (stopInFlight) {
-    log('stopDictation already in flight');
-    return;
+async function waitForRecordingPhase(timeoutMs = MIC_READY_TIMEOUT_MS) {
+  const deadline = Date.now() + timeoutMs;
+  while (state.phase === 'starting' && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
   }
+  return state.phase === 'recording';
+}
 
-  if (state.phase === 'starting') {
-    if (!force && Date.now() - (state.startedAt || 0) < START_GRACE_MS) {
-      log('Stop ignored during start grace period');
-      return;
-    }
-    stopInFlight = true;
-    try {
-      await cancelDictation();
-    } finally {
-      stopInFlight = false;
-    }
-    if (!force) {
-      toggleCooldownUntil = Date.now() + POST_TOGGLE_COOLDOWN_MS;
-    }
-    return;
+async function stopActiveRecording() {
+  if (state.phase !== 'recording') return;
+
+  const elapsed = state.recordingStartedAt ? Date.now() - state.recordingStartedAt : 0;
+  if (elapsed < MIN_RECORDING_MS) {
+    const waitMs = MIN_RECORDING_MS - elapsed;
+    log('Waiting', waitMs, 'ms for minimum recording length');
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
   }
 
   if (state.phase !== 'recording') return;
 
+  log('stopActiveRecording');
+  state.phase = 'processing';
+  await sendToTab(MSG.SHOW_OVERLAY, { state: OVERLAY_STATES.PROCESSING });
+  scheduleProcessingTimeout();
+
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  if (state.phase === 'processing') {
+    sendToOffscreen(MSG.STOP_RECORDING);
+  }
+}
+
+async function stopDictation({ force = false } = {}) {
+  if (stopInFlight && !force) {
+    log('stopDictation already in flight');
+    return;
+  }
+
   stopInFlight = true;
   try {
-    log('stopDictation');
-
-    const elapsed = state.recordingStartedAt ? Date.now() - state.recordingStartedAt : 0;
-    if (elapsed < MIN_RECORDING_MS) {
-      const waitMs = MIN_RECORDING_MS - elapsed;
-      log('Waiting', waitMs, 'ms for minimum recording length');
-      await new Promise((resolve) => setTimeout(resolve, waitMs));
+    if (state.phase === 'starting') {
+      const ready = await waitForRecordingPhase();
+      if (!ready) {
+        if (state.phase === 'starting') {
+          await cancelDictation();
+        }
+        return;
+      }
     }
 
     if (state.phase !== 'recording') return;
 
-    state.phase = 'processing';
-    await sendToTab(MSG.SHOW_OVERLAY, { state: OVERLAY_STATES.PROCESSING });
-    scheduleProcessingTimeout();
-
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    if (state.phase === 'processing') {
-      sendToOffscreen(MSG.STOP_RECORDING);
-    }
+    await stopActiveRecording();
   } finally {
     stopInFlight = false;
-    if (!force) {
-      toggleCooldownUntil = Date.now() + POST_TOGGLE_COOLDOWN_MS;
-    }
   }
 }
 
@@ -552,8 +557,7 @@ async function resetExtensionState() {
   micBootStarted = false;
   finishInFlight = false;
   stopInFlight = false;
-  lastShortcutToggleAt = 0;
-  toggleCooldownUntil = 0;
+  lastStartShortcutAt = 0;
   toggleQueue = Promise.resolve();
   try { await chrome.offscreen.closeDocument(); } catch {}
 }
@@ -565,42 +569,44 @@ function enqueueToggleWork(work) {
   return toggleQueue;
 }
 
-async function handleShortcutToggle(tabId) {
-  if (!tabId) return;
-  return enqueueToggleWork(() => executeShortcutToggle(tabId));
+function isActivePhase() {
+  return state.phase === 'recording' || state.phase === 'starting';
 }
 
-async function executeShortcutToggle(tabId) {
-  const now = Date.now();
+async function handleShortcutStart(tabId) {
+  if (!tabId) return;
+  return enqueueToggleWork(() => executeShortcutStart(tabId));
+}
 
-  if (now < toggleCooldownUntil) {
-    log('Shortcut toggle on cooldown');
-    return;
-  }
-
+async function executeShortcutStart(tabId) {
   if (state.phase === 'processing' || state.phase === 'cancelling') {
-    log('Shortcut ignored during', state.phase);
+    log('Shortcut start ignored during', state.phase);
     return;
   }
 
-  if (state.phase === 'recording' || state.phase === 'starting') {
-    if (state.phase === 'starting' && now - (state.startedAt || 0) < START_GRACE_MS) {
-      log('Shortcut stop ignored during start grace period');
-      return;
-    }
-    await stopDictation();
-    return;
-  }
+  if (isActivePhase()) return;
 
   if (state.phase !== 'idle') return;
 
-  if (now - lastShortcutToggleAt < TOGGLE_DEBOUNCE_MS) {
-    log('Shortcut toggle debounced');
+  const now = Date.now();
+  if (now - lastStartShortcutAt < TOGGLE_DEBOUNCE_MS) {
+    log('Shortcut start debounced');
     return;
   }
 
-  lastShortcutToggleAt = now;
+  lastStartShortcutAt = now;
   await startDictation(tabId);
+}
+
+async function handleShortcutStop() {
+  if (state.phase === 'processing' || state.phase === 'cancelling') {
+    log('Shortcut stop ignored during', state.phase);
+    return;
+  }
+
+  if (!isActivePhase()) return;
+
+  await stopDictation();
 }
 
 chrome.commands.onCommand.addListener((command, tab) => {
@@ -624,7 +630,11 @@ chrome.commands.onCommand.addListener((command, tab) => {
       }
 
       log('Active tab:', targetTab.id, targetTab.url);
-      await handleShortcutToggle(targetTab.id);
+      if (isActivePhase()) {
+        await handleShortcutStop();
+      } else {
+        await handleShortcutStart(targetTab.id);
+      }
     } catch (err) {
       log('Command handler error:', err.message);
     }

@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=440, initial-scale=1.0">
+  <title>Typestream Voice — Small Promo Tile (440×280)</title>
+  <style>
+    @font-face {
+      font-family: 'Geist Sans';
+      src: url('https://cdn.jsdelivr.net/npm/@fontsource/geist-sans@5.0.1/files/geist-sans-latin-400-normal.woff2') format('woff2');
+      font-weight: 400;
+      font-style: normal;
+    }
+    @font-face {
+      font-family: 'Geist Sans';
+      src: url('https://cdn.jsdelivr.net/npm/@fontsource/geist-sans@5.0.1/files/geist-sans-latin-500-normal.woff2') format('woff2');
+      font-weight: 500;
+      font-style: normal;
+    }
+    @font-face {
+      font-family: 'Geist Sans';
+      src: url('https://cdn.jsdelivr.net/npm/@fontsource/geist-sans@5.0.1/files/geist-sans-latin-600-normal.woff2') format('woff2');
+      font-weight: 600;
+      font-style: normal;
+    }
+    @font-face {
+      font-family: 'Geist Sans';
+      src: url('https://cdn.jsdelivr.net/npm/@fontsource/geist-sans@5.0.1/files/geist-sans-latin-700-normal.woff2') format('woff2');
+      font-weight: 700;
+      font-style: normal;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 440px;
+      height: 280px;
+      overflow: hidden;
+      font-family: 'Geist Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .canvas {
+      position: relative;
+      width: 440px;
+      height: 280px;
+      background: #09090b;
+      overflow: hidden;
+      color: #fafafa;
+    }
+
+    /* Ambient glows */
+    .glow-indigo {
+      position: absolute;
+      width: 220px;
+      height: 220px;
+      top: -80px;
+      right: -40px;
+      background: radial-gradient(circle, rgba(99, 102, 241, 0.45) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .glow-violet {
+      position: absolute;
+      width: 180px;
+      height: 180px;
+      bottom: -60px;
+      left: -30px;
+      background: radial-gradient(circle, rgba(139, 92, 246, 0.35) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .glow-sky {
+      position: absolute;
+      width: 120px;
+      height: 120px;
+      bottom: 40px;
+      right: 60px;
+      background: radial-gradient(circle, rgba(56, 189, 248, 0.2) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    /* Subtle grid */
+    .grid {
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+      background-size: 22px 22px;
+      mask-image: radial-gradient(ellipse 80% 80% at 50% 50%, black 20%, transparent 100%);
+      pointer-events: none;
+    }
+
+    .content {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      height: 100%;
+      padding: 28px 32px;
+    }
+
+    .brand-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      box-shadow: 0 8px 24px rgba(99, 102, 241, 0.35);
+    }
+
+    .logo svg {
+      width: 26px;
+      height: 26px;
+    }
+
+    .brand-text {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .brand-name {
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+    }
+
+    .brand-tag {
+      font-size: 11px;
+      font-weight: 500;
+      color: #a1a1aa;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+
+    .hero {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 8px 0 4px;
+    }
+
+    .headline {
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: -0.04em;
+      line-height: 1.15;
+      margin-bottom: 8px;
+    }
+
+    .headline .accent {
+      background: linear-gradient(135deg, #818cf8 0%, #a78bfa 45%, #38bdf8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .subhead {
+      font-size: 13px;
+      line-height: 1.45;
+      color: #d4d4d8;
+      max-width: 280px;
+    }
+
+    .footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .pills {
+      display: flex;
+      gap: 6px;
+    }
+
+    .pill {
+      font-size: 10px;
+      font-weight: 500;
+      color: #e4e4e7;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      border-radius: 999px;
+      padding: 4px 10px;
+      backdrop-filter: blur(8px);
+      white-space: nowrap;
+    }
+
+    /* Waveform visual */
+    .waveform {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      height: 28px;
+    }
+
+    .bar {
+      width: 3px;
+      border-radius: 2px;
+      background: linear-gradient(180deg, #818cf8, #6366f1);
+      animation: wave 1.2s ease-in-out infinite;
+    }
+
+    .bar:nth-child(1) { height: 10px; animation-delay: 0s; }
+    .bar:nth-child(2) { height: 18px; animation-delay: 0.1s; }
+    .bar:nth-child(3) { height: 24px; animation-delay: 0.2s; }
+    .bar:nth-child(4) { height: 16px; animation-delay: 0.3s; }
+    .bar:nth-child(5) { height: 22px; animation-delay: 0.15s; }
+    .bar:nth-child(6) { height: 12px; animation-delay: 0.25s; }
+    .bar:nth-child(7) { height: 20px; animation-delay: 0.05s; }
+
+    @keyframes wave {
+      0%, 100% { transform: scaleY(0.5); opacity: 0.6; }
+      50% { transform: scaleY(1); opacity: 1; }
+    }
+
+    /* Glass accent card */
+    .mic-card {
+      position: absolute;
+      right: 28px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 72px;
+      height: 72px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      backdrop-filter: blur(12px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.08),
+        0 16px 40px rgba(99, 102, 241, 0.2);
+    }
+
+    .mic-ring {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, rgba(99, 102, 241, 0.25), rgba(139, 92, 246, 0.15));
+      border: 1px solid rgba(129, 140, 248, 0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .mic-ring svg {
+      width: 20px;
+      height: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="canvas">
+    <div class="glow-indigo"></div>
+    <div class="glow-violet"></div>
+    <div class="glow-sky"></div>
+    <div class="grid"></div>
+
+    <div class="mic-card">
+      <div class="mic-ring">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z" fill="#818cf8"/>
+          <path d="M18 9v3a6 6 0 0 1-12 0V9" stroke="#818cf8" stroke-width="1.75" stroke-linecap="round"/>
+          <line x1="12" y1="18" x2="12" y2="21" stroke="#818cf8" stroke-width="1.75" stroke-linecap="round"/>
+          <line x1="9" y1="21" x2="15" y2="21" stroke="#818cf8" stroke-width="1.75" stroke-linecap="round"/>
+        </svg>
+      </div>
+    </div>
+
+    <div class="content">
+      <div class="brand-row">
+        <div class="logo">
+          <svg viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M64 24a12 12 0 0 0-12 12v28a12 12 0 0 0 24 0V36a12 12 0 0 0-12-12Z" fill="#6366f1"/>
+            <path d="M88 48v16a24 24 0 0 1-48 0V48" stroke="#6366f1" stroke-width="6" stroke-linecap="round"/>
+            <line x1="64" y1="80" x2="64" y2="96" stroke="#6366f1" stroke-width="6" stroke-linecap="round"/>
+            <line x1="52" y1="96" x2="76" y2="96" stroke="#6366f1" stroke-width="6" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <div class="brand-name">Typestream Voice</div>
+          <div class="brand-tag">Chrome Extension</div>
+        </div>
+      </div>
+
+      <div class="hero">
+        <h1 class="headline">
+          Talk.<br>
+          <span class="accent">Type instantly.</span>
+        </h1>
+        <p class="subhead">AI speech-to-text dictation for any website. Fast, private, pay-as-you-go.</p>
+      </div>
+
+      <div class="footer">
+        <div class="pills">
+          <span class="pill">⚡ &lt;1s latency</span>
+          <span class="pill">🔒 Private</span>
+        </div>
+        <div class="waveform" aria-hidden="true">
+          <div class="bar"></div>
+          <div class="bar"></div>
+          <div class="bar"></div>
+          <div class="bar"></div>
+          <div class="bar"></div>
+          <div class="bar"></div>
+          <div class="bar"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
