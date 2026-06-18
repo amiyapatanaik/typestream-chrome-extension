@@ -27,7 +27,8 @@
     "clipboardWrite",
     "offscreen",
     "activeTab",
-    "scripting"
+    "scripting",
+    "alarms"
   ],
   "host_permissions": [
     "https://api.typestream.dev/*"

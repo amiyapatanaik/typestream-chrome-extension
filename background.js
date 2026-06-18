@@ -1,8 +1,9 @@
 console.log('[Typestream] === Service worker loaded ===');
 
-import { MSG, OVERLAY_STATES } from './lib/constants.js';
+import { MSG, OVERLAY_STATES, STORAGE_KEYS } from './lib/constants.js';
 import { getApiKey, addHistoryItem } from './lib/storage.js';
 import { transcribeRecording, ApiError } from './lib/api.js';
+import { loadRecordingBlob, deleteRecordingBlob } from './lib/audio-store.js';
 
 function log(...args) {
   console.log('[Typestream]', ...args);
@@ -18,6 +19,8 @@ self.addEventListener('unhandledrejection', (e) => {
 // ── State ───────────────────────────────────────────────────────────
 
 const MIC_READY_TIMEOUT_MS = 3000;
+const KEEPALIVE_ALARM = 'dictation-keepalive';
+const KEEPALIVE_DELAY_MIN = 0.4; // ~24s; keeps the service worker alive during long recordings
 
 const state = {
   phase: 'idle', // idle | starting | recording | processing | cancelling
@@ -35,6 +38,94 @@ let micBootPromise = null;
 let micBootStarted = false;
 let finishInFlight = false;
 let processingTimeout = null;
+
+function needsKeepalive() {
+  return state.phase === 'starting' || state.phase === 'recording' || state.phase === 'processing';
+}
+
+function syncKeepalive() {
+  if (needsKeepalive()) {
+    chrome.alarms.create(KEEPALIVE_ALARM, { delayInMinutes: KEEPALIVE_DELAY_MIN });
+  } else {
+    chrome.alarms.clear(KEEPALIVE_ALARM);
+  }
+}
+
+async function persistSession() {
+  if (state.phase === 'idle') {
+    await chrome.storage.session.remove(STORAGE_KEYS.DICTATION_SESSION);
+    return;
+  }
+
+  await chrome.storage.session.set({
+    [STORAGE_KEYS.DICTATION_SESSION]: {
+      phase: state.phase,
+      tabId: state.tabId,
+      recordingStartedAt: state.recordingStartedAt,
+      startedAt: state.startedAt,
+      recordingMimeType: state.recordingMimeType,
+    },
+  });
+}
+
+async function restoreSession() {
+  try {
+    const data = await chrome.storage.session.get(STORAGE_KEYS.DICTATION_SESSION);
+    const saved = data[STORAGE_KEYS.DICTATION_SESSION];
+    if (!saved || saved.phase === 'idle') return;
+
+    const contexts = await chrome.runtime.getContexts({
+      contextTypes: ['OFFSCREEN_DOCUMENT'],
+    });
+    const offscreenAlive = contexts.some((c) => c.documentUrl?.includes('offscreen.html'));
+
+    if (saved.phase === 'processing') {
+      log('Stale processing session, cleaning up');
+      await chrome.storage.session.remove(STORAGE_KEYS.DICTATION_SESSION);
+      if (saved.tabId) {
+        await sendToTab(MSG.SHOW_OVERLAY, {
+          state: OVERLAY_STATES.ERROR,
+          error: 'Transcription was interrupted. Try again.',
+          action: 'retry',
+        }, saved.tabId);
+      }
+      return;
+    }
+
+    if (!offscreenAlive && (saved.phase === 'recording' || saved.phase === 'starting')) {
+      log('Orphaned recording session, cleaning up');
+      await chrome.storage.session.remove(STORAGE_KEYS.DICTATION_SESSION);
+      if (saved.tabId) {
+        await sendToTab(MSG.HIDE_OVERLAY, {}, saved.tabId);
+      }
+      return;
+    }
+
+    log('Restored session, phase:', saved.phase);
+    state.phase = saved.phase;
+    state.tabId = saved.tabId;
+    state.recordingStartedAt = saved.recordingStartedAt;
+    state.startedAt = saved.startedAt;
+    state.recordingMimeType = saved.recordingMimeType || 'audio/webm';
+    syncKeepalive();
+  } catch (err) {
+    log('restoreSession error:', err.message);
+  }
+}
+
+const sessionReady = restoreSession();
+
+async function ensureSessionReady() {
+  await sessionReady;
+}
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name !== KEEPALIVE_ALARM) return;
+  log('Keepalive ping, phase:', state.phase);
+  if (needsKeepalive()) {
+    chrome.alarms.create(KEEPALIVE_ALARM, { delayInMinutes: KEEPALIVE_DELAY_MIN });
+  }
+});
 
 async function ensureOffscreen() {
   const contexts = await chrome.runtime.getContexts({
@@ -64,33 +155,36 @@ async function handleOffscreenMessage(msg) {
       log('Recording active');
       if (state.phase === 'starting') state.phase = 'recording';
       state.recordingStartedAt = Date.now();
+      void persistSession();
+      syncKeepalive();
       return;
     }
 
     if (msg.type === MSG.RECORDING_STOPPED) {
       log('Recording stopped, phase:', state.phase);
 
-      if (state.phase === 'idle' || state.phase === 'cancelling' || state.phase === 'starting') {
-        if (state.phase !== 'idle') {
-          await sendToTab(MSG.HIDE_OVERLAY);
-        }
+      if (state.phase === 'idle' || state.phase === 'cancelling') {
         await cleanup();
         return;
       }
 
-      if (state.phase !== 'recording' && state.phase !== 'processing') {
+      if (state.phase !== 'recording' && state.phase !== 'processing' && state.phase !== 'starting') {
         log('Ignoring stale RECORDING_STOPPED');
         return;
       }
 
-      const blob = blobFromAudioPayload(msg.payload);
+      const blob = await loadAudioFromPayload(msg.payload);
 
       if (!blob || blob.size === 0) {
-        await sendToTab(MSG.SHOW_OVERLAY, {
-          state: OVERLAY_STATES.ERROR,
-          error: 'No audio recorded. Try again.',
-          action: 'retry',
-        });
+        if (state.phase === 'starting') {
+          await sendToTab(MSG.HIDE_OVERLAY);
+        } else {
+          await sendToTab(MSG.SHOW_OVERLAY, {
+            state: OVERLAY_STATES.ERROR,
+            error: 'No audio recorded. Try again.',
+            action: 'retry',
+          });
+        }
         await cleanup();
         return;
       }
@@ -99,8 +193,10 @@ async function handleOffscreenMessage(msg) {
       state.recordingMimeType = msg.payload?.mimeType || blob.type || 'audio/webm';
       log('Audio blob:', state.recordingBlob.size, 'bytes,', state.recordingMimeType);
 
-      if (state.phase === 'recording') {
+      if (state.phase === 'recording' || state.phase === 'starting') {
         state.phase = 'processing';
+        void persistSession();
+        syncKeepalive();
         await sendToTab(MSG.SHOW_OVERLAY, { state: OVERLAY_STATES.PROCESSING });
         scheduleProcessingTimeout();
       }
@@ -129,7 +225,7 @@ async function handleOffscreenMessage(msg) {
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.target === 'background' || msg.type === MSG.RECORDING_READY || msg.type === MSG.RECORDING_STOPPED || msg.type === MSG.OFFSCREEN_ERROR) {
-    void handleOffscreenMessage(msg);
+    void ensureSessionReady().then(() => handleOffscreenMessage(msg));
     return false;
   }
 
@@ -162,7 +258,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === MSG.STOP_DICTATION) {
     log('STOP_DICTATION');
     sendResponse({ received: true });
-    void stopDictation().catch((err) => log('STOP_DICTATION error:', err.message));
+    void ensureSessionReady()
+      .then(() => stopDictation())
+      .catch((err) => log('STOP_DICTATION error:', err.message));
     return true;
   }
   if (msg.type === MSG.START_DICTATION) {
@@ -173,11 +271,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true;
     }
     sendResponse({ received: true });
-    if (isActivePhase()) {
-      void handleShortcutStop().catch((err) => log('START_DICTATION stop error:', err.message));
-    } else {
-      void handleShortcutStart(tabId).catch((err) => log('START_DICTATION error:', err.message));
-    }
+    void ensureSessionReady().then(() => {
+      if (isActivePhase()) {
+        return handleShortcutStop();
+      }
+      return handleShortcutStart(tabId);
+    }).catch((err) => log('START_DICTATION error:', err.message));
     return true;
   }
   if (msg.type === MSG.GET_SHORTCUT_LABEL) {
@@ -238,11 +337,34 @@ function base64ToBytes(base64) {
   return bytes;
 }
 
-function blobFromAudioPayload(payload) {
+function bytesFromPayload(value) {
+  if (!value) return null;
+  if (value instanceof ArrayBuffer) return new Uint8Array(value);
+  if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+  if (typeof value.byteLength === 'number' && value.byteLength > 0) {
+    return new Uint8Array(value);
+  }
+  return null;
+}
+
+async function loadAudioFromPayload(payload) {
   if (!payload) return null;
 
   const mime = payload.mimeType || 'audio/webm';
   const expected = payload.byteLength ?? 0;
+
+  if (typeof payload.audioId === 'string' && payload.audioId.length > 0) {
+    const blob = await loadRecordingBlob(payload.audioId);
+    await deleteRecordingBlob(payload.audioId).catch((err) => {
+      log('Failed to delete stored recording:', err.message);
+    });
+    if (!blob || blob.size === 0) {
+      log('Missing IndexedDB audio for id:', payload.audioId);
+      return null;
+    }
+    log('Loaded IndexedDB audio:', blob.size, 'bytes (expected:', expected, ')');
+    return blob;
+  }
 
   if (typeof payload.base64 === 'string' && payload.base64.length > 0) {
     const bytes = base64ToBytes(payload.base64);
@@ -251,14 +373,15 @@ function blobFromAudioPayload(payload) {
     return blob;
   }
 
-  if (payload.bytes && typeof payload.bytes.byteLength === 'number' && payload.bytes.byteLength > 0) {
-    const blob = new Blob([payload.bytes], { type: mime });
-    log('Decoded Uint8Array audio:', blob.size, 'bytes (expected:', expected, ')');
+  const bytes = bytesFromPayload(payload.bytes);
+  if (bytes && bytes.byteLength > 0) {
+    const blob = new Blob([bytes], { type: mime });
+    log('Decoded byte audio:', blob.size, 'bytes (expected:', expected, ')');
     return blob;
   }
 
-  const data = payload.data;
-  if (data && typeof data.byteLength === 'number' && data.byteLength > 0) {
+  const data = bytesFromPayload(payload.data);
+  if (data && data.byteLength > 0) {
     const blob = new Blob([data], { type: mime });
     log('Decoded ArrayBuffer audio:', blob.size, 'bytes');
     return blob;
@@ -372,6 +495,9 @@ async function startDictation(tabId) {
   state.recordingStartedAt = null;
   state.transcript = null;
 
+  void persistSession();
+  syncKeepalive();
+
   const connected = await ensureContentScript(tabId);
   if (!connected) {
     log('No content script available on tab', tabId);
@@ -453,6 +579,8 @@ async function stopActiveRecording() {
 
   log('stopActiveRecording');
   state.phase = 'processing';
+  void persistSession();
+  syncKeepalive();
   await sendToTab(MSG.SHOW_OVERLAY, { state: OVERLAY_STATES.PROCESSING });
   scheduleProcessingTimeout();
   sendToOffscreen(MSG.STOP_RECORDING);
@@ -522,6 +650,8 @@ async function cleanup() {
   micBootPromise = null;
   micBootStarted = false;
   finishInFlight = false;
+  void persistSession();
+  syncKeepalive();
 }
 
 async function resetExtensionState() {
@@ -563,6 +693,8 @@ chrome.commands.onCommand.addListener((command, tab) => {
 
   void (async () => {
     try {
+      await ensureSessionReady();
+
       let targetTab = tab;
       if (!targetTab?.id) {
         const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
@@ -598,7 +730,7 @@ chrome.runtime.onInstalled.addListener((details) => {
   }
 });
 
-void resetExtensionState();
+// Do NOT reset state on every service-worker wake — that kills in-progress recordings.
 
 setTimeout(async () => {
   try {

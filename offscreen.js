@@ -1,3 +1,5 @@
+import { saveRecordingBlob } from './lib/audio-store.js';
+
 const LOG = '[Typestream Offscreen]';
 
 const MSG = {
@@ -15,17 +17,20 @@ const TARGET = {
 
 const MIN_BLOB_BYTES = 500;
 const MIME_TYPE = 'audio/webm';
+const RECORDER_TIMESLICE_MS = 1000;
 
 let recorder = null;
 let data = [];
 let activeStreams = [];
-let audioContext = null;
 let isStarting = false;
 let stopRequested = false;
+let stopInFlight = false;
 
 function sendToBackground(msg) {
   console.log(LOG, 'Sending:', msg.type);
-  chrome.runtime.sendMessage({ ...msg, target: TARGET.BACKGROUND });
+  chrome.runtime.sendMessage({ ...msg, target: TARGET.BACKGROUND }, () => {
+    void chrome.runtime.lastError;
+  });
 }
 
 chrome.runtime.onMessage.addListener((message) => {
@@ -57,22 +62,6 @@ function micErrorMessage(name) {
   }
 }
 
-function blobToBase64(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const result = reader.result;
-      if (typeof result !== 'string') {
-        reject(new Error('Failed to encode audio'));
-        return;
-      }
-      resolve(result.split(',')[1] || '');
-    };
-    reader.onerror = () => reject(reader.error || new Error('Failed to encode audio'));
-    reader.readAsDataURL(blob);
-  });
-}
-
 async function emitRecordingStopped() {
   const chunkSizes = data.map((chunk) => chunk.size);
   const blob = new Blob(data, { type: MIME_TYPE });
@@ -90,15 +79,15 @@ async function emitRecordingStopped() {
     return;
   }
 
-  const base64 = await blobToBase64(blob);
-  console.log(LOG, 'Encoded base64 length:', base64.length);
+  const audioId = await saveRecordingBlob(blob);
+  console.log(LOG, 'Saved recording to IndexedDB:', audioId, blob.size, 'bytes');
 
   sendToBackground({
     type: MSG.RECORDING_STOPPED,
     payload: {
       mimeType: MIME_TYPE,
       byteLength: blob.size,
-      base64,
+      audioId,
     },
   });
 }
@@ -112,6 +101,7 @@ async function startRecording() {
 
   isStarting = true;
   stopRequested = false;
+  stopInFlight = false;
 
   try {
     await stopAllStreams();
@@ -135,18 +125,7 @@ async function startRecording() {
     const track = micStream.getAudioTracks()[0];
     console.log(LOG, 'Mic track:', track?.label, 'state:', track?.readyState, 'muted:', track?.muted);
 
-    audioContext = new AudioContext();
-    await audioContext.resume();
-
-    const micSource = audioContext.createMediaStreamSource(micStream);
-    const micGain = audioContext.createGain();
-    micGain.gain.value = 1.0;
-
-    const destination = audioContext.createMediaStreamDestination();
-    micSource.connect(micGain);
-    micGain.connect(destination);
-
-    recorder = new MediaRecorder(destination.stream, { mimeType: MIME_TYPE });
+    recorder = new MediaRecorder(micStream, { mimeType: MIME_TYPE });
     recorder.ondataavailable = (event) => {
       if (event.data.size > 0) {
         console.log(LOG, 'dataavailable:', event.data.size, 'bytes');
@@ -168,8 +147,8 @@ async function startRecording() {
       });
     };
 
-    recorder.start();
-    console.log(LOG, 'MediaRecorder started');
+    recorder.start(RECORDER_TIMESLICE_MS);
+    console.log(LOG, 'MediaRecorder started (timeslice:', RECORDER_TIMESLICE_MS, 'ms)');
 
     if (stopRequested) {
       stopRequested = false;
@@ -193,20 +172,38 @@ async function startRecording() {
 async function stopRecording() {
   console.log(LOG, 'stopRecording(), isStarting:', isStarting, 'recorder:', recorder?.state);
 
+  if (stopInFlight) {
+    console.log(LOG, 'Stop already in flight, ignoring');
+    return;
+  }
+
   if (isStarting) {
     stopRequested = true;
     return;
   }
 
   if (recorder?.state === 'recording') {
-    recorder.stop();
+    stopInFlight = true;
+    try {
+      if (typeof recorder.requestData === 'function') {
+        recorder.requestData();
+      }
+      recorder.stop();
+    } catch (err) {
+      stopInFlight = false;
+      console.log(LOG, 'stopRecording ERROR:', err.message);
+      sendToBackground({
+        type: MSG.OFFSCREEN_ERROR,
+        payload: { message: 'Failed to stop recording. Try again.' },
+      });
+    }
     return;
   }
 
-  await stopAllStreams();
+  console.log(LOG, 'No active recorder to stop');
   sendToBackground({
-    type: MSG.RECORDING_STOPPED,
-    payload: { mimeType: MIME_TYPE, byteLength: 0, base64: '' },
+    type: MSG.OFFSCREEN_ERROR,
+    payload: { message: 'No audio recorded. Try again.' },
   });
 }
 
@@ -216,16 +213,10 @@ async function stopAllStreams() {
   });
   activeStreams = [];
 
-  if (audioContext) {
-    try {
-      await audioContext.close();
-    } catch {}
-    audioContext = null;
-  }
-
   recorder = null;
   isStarting = false;
   stopRequested = false;
+  stopInFlight = false;
 }
 
 console.log(LOG, 'Offscreen document ready');
