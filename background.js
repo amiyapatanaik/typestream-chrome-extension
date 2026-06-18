@@ -18,6 +18,9 @@ self.addEventListener('unhandledrejection', (e) => {
 // ── State ───────────────────────────────────────────────────────────
 
 const MIN_RECORDING_MS = 800;
+const TOGGLE_DEBOUNCE_MS = 400;
+const START_GRACE_MS = 400;
+const POST_TOGGLE_COOLDOWN_MS = 300;
 
 const state = {
   phase: 'idle', // idle | starting | recording | processing | cancelling
@@ -25,6 +28,7 @@ const state = {
   recordingBlob: null,
   recordingMimeType: 'audio/webm',
   recordingStartedAt: null,
+  startedAt: null,
   transcript: null,
 };
 
@@ -34,6 +38,10 @@ let micBootPromise = null;
 let micBootStarted = false;
 let finishInFlight = false;
 let processingTimeout = null;
+let stopInFlight = false;
+let lastShortcutToggleAt = 0;
+let toggleCooldownUntil = 0;
+let toggleQueue = Promise.resolve();
 
 async function ensureOffscreen() {
   const contexts = await chrome.runtime.getContexts({
@@ -161,7 +169,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === MSG.STOP_DICTATION) {
     log('STOP_DICTATION');
     sendResponse({ received: true });
-    void stopDictation().catch((err) => log('STOP_DICTATION error:', err.message));
+    void stopDictation({ force: true }).catch((err) => log('STOP_DICTATION error:', err.message));
+    return true;
+  }
+  if (msg.type === MSG.START_DICTATION) {
+    log('START_DICTATION');
+    const tabId = sender.tab?.id;
+    if (!tabId) {
+      sendResponse({ received: false });
+      return true;
+    }
+    sendResponse({ received: true });
+    void handleShortcutToggle(tabId).catch((err) => log('START_DICTATION error:', err.message));
+    return true;
+  }
+  if (msg.type === MSG.GET_SHORTCUT_LABEL) {
+    void chrome.commands.getAll().then((commands) => {
+      const cmd = commands.find((c) => c.name === 'toggle-dictation');
+      sendResponse({ label: formatShortcutLabel(cmd?.shortcut || '') });
+    });
     return true;
   }
   return false;
@@ -173,6 +199,26 @@ function isRestrictedTabUrl(url) {
   if (!url) return true;
   const restricted = ['chrome://', 'chrome-extension://', 'edge://', 'about:', 'devtools://'];
   return restricted.some((prefix) => url.startsWith(prefix));
+}
+
+const IS_MAC = typeof navigator !== 'undefined' && navigator.platform?.includes('Mac');
+
+const MODIFIER_SYMBOLS = {
+  Ctrl: 'Ctrl',
+  Alt: IS_MAC ? '⌥' : 'Alt',
+  Shift: IS_MAC ? '⇧' : 'Shift',
+  Meta: 'Win',
+  Command: '⌘',
+  MacCtrl: '⌃',
+  Option: '⌥',
+};
+
+function formatShortcutLabel(shortcut) {
+  if (!shortcut) return '';
+  return shortcut.split('+').map((key) => {
+    const trimmed = key.trim();
+    return MODIFIER_SYMBOLS[trimmed] || trimmed;
+  }).join('');
 }
 
 const PING = '__typestream_ping__';
@@ -314,6 +360,7 @@ async function startDictation(tabId) {
 
   state.phase = 'starting';
   state.tabId = tabId;
+  state.startedAt = Date.now();
   state.recordingBlob = null;
   state.recordingMimeType = 'audio/webm';
   state.recordingStartedAt = null;
@@ -387,27 +434,58 @@ async function cancelDictation() {
   await cleanup();
 }
 
-async function stopDictation() {
-  if (state.phase === 'starting') {
-    await cancelDictation();
+async function stopDictation({ force = false } = {}) {
+  if (stopInFlight) {
+    log('stopDictation already in flight');
     return;
   }
-  if (state.phase !== 'recording') return;
-  log('stopDictation');
 
-  const elapsed = state.recordingStartedAt ? Date.now() - state.recordingStartedAt : 0;
-  if (elapsed < MIN_RECORDING_MS) {
-    const waitMs = MIN_RECORDING_MS - elapsed;
-    log('Waiting', waitMs, 'ms for minimum recording length');
-    await new Promise((resolve) => setTimeout(resolve, waitMs));
+  if (state.phase === 'starting') {
+    if (!force && Date.now() - (state.startedAt || 0) < START_GRACE_MS) {
+      log('Stop ignored during start grace period');
+      return;
+    }
+    stopInFlight = true;
+    try {
+      await cancelDictation();
+    } finally {
+      stopInFlight = false;
+    }
+    if (!force) {
+      toggleCooldownUntil = Date.now() + POST_TOGGLE_COOLDOWN_MS;
+    }
+    return;
   }
 
-  state.phase = 'processing';
-  await sendToTab(MSG.SHOW_OVERLAY, { state: OVERLAY_STATES.PROCESSING });
-  scheduleProcessingTimeout();
+  if (state.phase !== 'recording') return;
 
-  await new Promise((resolve) => setTimeout(resolve, 500));
-  sendToOffscreen(MSG.STOP_RECORDING);
+  stopInFlight = true;
+  try {
+    log('stopDictation');
+
+    const elapsed = state.recordingStartedAt ? Date.now() - state.recordingStartedAt : 0;
+    if (elapsed < MIN_RECORDING_MS) {
+      const waitMs = MIN_RECORDING_MS - elapsed;
+      log('Waiting', waitMs, 'ms for minimum recording length');
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+    }
+
+    if (state.phase !== 'recording') return;
+
+    state.phase = 'processing';
+    await sendToTab(MSG.SHOW_OVERLAY, { state: OVERLAY_STATES.PROCESSING });
+    scheduleProcessingTimeout();
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    if (state.phase === 'processing') {
+      sendToOffscreen(MSG.STOP_RECORDING);
+    }
+  } finally {
+    stopInFlight = false;
+    if (!force) {
+      toggleCooldownUntil = Date.now() + POST_TOGGLE_COOLDOWN_MS;
+    }
+  }
 }
 
 async function finishDictation() {
@@ -453,10 +531,12 @@ async function cleanup() {
   state.recordingBlob = null;
   state.recordingMimeType = 'audio/webm';
   state.recordingStartedAt = null;
+  state.startedAt = null;
   state.transcript = null;
   micBootPromise = null;
   micBootStarted = false;
   finishInFlight = false;
+  stopInFlight = false;
 }
 
 async function resetExtensionState() {
@@ -466,47 +546,89 @@ async function resetExtensionState() {
   state.recordingBlob = null;
   state.recordingMimeType = 'audio/webm';
   state.recordingStartedAt = null;
+  state.startedAt = null;
   state.transcript = null;
   micBootPromise = null;
   micBootStarted = false;
   finishInFlight = false;
+  stopInFlight = false;
+  lastShortcutToggleAt = 0;
+  toggleCooldownUntil = 0;
+  toggleQueue = Promise.resolve();
   try { await chrome.offscreen.closeDocument(); } catch {}
 }
 
-chrome.commands.onCommand.addListener(async (command, tab) => {
+function enqueueToggleWork(work) {
+  toggleQueue = toggleQueue.then(work).catch((err) => {
+    log('Toggle queue error:', err.message);
+  });
+  return toggleQueue;
+}
+
+async function handleShortcutToggle(tabId) {
+  if (!tabId) return;
+  return enqueueToggleWork(() => executeShortcutToggle(tabId));
+}
+
+async function executeShortcutToggle(tabId) {
+  const now = Date.now();
+
+  if (now < toggleCooldownUntil) {
+    log('Shortcut toggle on cooldown');
+    return;
+  }
+
+  if (state.phase === 'processing' || state.phase === 'cancelling') {
+    log('Shortcut ignored during', state.phase);
+    return;
+  }
+
+  if (state.phase === 'recording' || state.phase === 'starting') {
+    if (state.phase === 'starting' && now - (state.startedAt || 0) < START_GRACE_MS) {
+      log('Shortcut stop ignored during start grace period');
+      return;
+    }
+    await stopDictation();
+    return;
+  }
+
+  if (state.phase !== 'idle') return;
+
+  if (now - lastShortcutToggleAt < TOGGLE_DEBOUNCE_MS) {
+    log('Shortcut toggle debounced');
+    return;
+  }
+
+  lastShortcutToggleAt = now;
+  await startDictation(tabId);
+}
+
+chrome.commands.onCommand.addListener((command, tab) => {
   log('>>> COMMAND:', command, 'tab:', tab?.id, 'phase:', state.phase);
   if (command !== 'toggle-dictation') return;
 
-  try {
-    if (state.phase === 'processing' || state.phase === 'cancelling') {
-      log('Ignoring shortcut during', state.phase);
-      return;
-    }
+  void (async () => {
+    try {
+      let targetTab = tab;
+      if (!targetTab?.id) {
+        const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+        targetTab = tabs[0];
+      }
+      if (!targetTab?.id) {
+        log('No active tab');
+        return;
+      }
+      if (isRestrictedTabUrl(targetTab.url)) {
+        log('Restricted page:', targetTab.url);
+        return;
+      }
 
-    if (state.phase === 'recording' || state.phase === 'starting') {
-      await stopDictation();
-      return;
+      log('Active tab:', targetTab.id, targetTab.url);
+      await handleShortcutToggle(targetTab.id);
+    } catch (err) {
+      log('Command handler error:', err.message);
     }
-
-    let targetTab = tab;
-    if (!targetTab?.id) {
-      const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-      targetTab = tabs[0];
-    }
-    if (!targetTab?.id) {
-      log('No active tab');
-      return;
-    }
-    if (isRestrictedTabUrl(targetTab.url)) {
-      log('Restricted page:', targetTab.url);
-      return;
-    }
-
-    log('Active tab:', targetTab.id, targetTab.url);
-    await startDictation(targetTab.id);
-  } catch (err) {
-    log('Command handler error:', err.message);
-  }
+  })();
 });
 
 // ── Startup ─────────────────────────────────────────────────────────

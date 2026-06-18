@@ -2,6 +2,7 @@ const DEFAULT_SETTINGS = {
   saveHistory: true,
   autoCopy: true,
   playSounds: false,
+  showFloatingBar: false,
 };
 
 const STORAGE_KEYS = {
@@ -22,6 +23,7 @@ const clearDataBtn = document.getElementById('clear-data-btn');
 const toggleHistory = document.getElementById('toggle-history');
 const toggleAutocopy = document.getElementById('toggle-autocopy');
 const toggleSounds = document.getElementById('toggle-sounds');
+const toggleFloatingBar = document.getElementById('toggle-floating-bar');
 
 const IS_MAC = navigator.platform.includes('Mac');
 
@@ -114,6 +116,7 @@ async function loadSettings() {
   setToggle(toggleHistory, settings.saveHistory);
   setToggle(toggleAutocopy, settings.autoCopy);
   setToggle(toggleSounds, settings.playSounds);
+  setToggle(toggleFloatingBar, settings.showFloatingBar);
 
   await loadShortcut();
   await updateMicBanner();
@@ -186,7 +189,7 @@ function getToggle(el) {
   return el.getAttribute('aria-checked') === 'true';
 }
 
-[toggleHistory, toggleAutocopy, toggleSounds].forEach((toggle) => {
+[toggleHistory, toggleAutocopy, toggleSounds, toggleFloatingBar].forEach((toggle) => {
   toggle.addEventListener('click', () => {
     const current = getToggle(toggle);
     setToggle(toggle, !current);
@@ -199,6 +202,7 @@ async function saveAllSettings() {
     saveHistory: getToggle(toggleHistory),
     autoCopy: getToggle(toggleAutocopy),
     playSounds: getToggle(toggleSounds),
+    showFloatingBar: getToggle(toggleFloatingBar),
   };
   await chrome.storage.local.set({ [STORAGE_KEYS.SETTINGS]: settings });
 }
@@ -218,6 +222,7 @@ clearDataBtn.addEventListener('click', async () => {
   setToggle(toggleHistory, DEFAULT_SETTINGS.saveHistory);
   setToggle(toggleAutocopy, DEFAULT_SETTINGS.autoCopy);
   setToggle(toggleSounds, DEFAULT_SETTINGS.playSounds);
+  setToggle(toggleFloatingBar, DEFAULT_SETTINGS.showFloatingBar);
   permBanner.classList.remove('granted');
   permBanner.style.borderLeftColor = '#6366f1';
   permBanner.style.background = '';

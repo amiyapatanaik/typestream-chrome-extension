@@ -7,6 +7,16 @@ const MSG = {
   RETRY_DICTATION: 'RETRY_DICTATION',
   DISMISS_OVERLAY: 'DISMISS_OVERLAY',
   STOP_DICTATION: 'STOP_DICTATION',
+  START_DICTATION: 'START_DICTATION',
+  GET_SHORTCUT_LABEL: 'GET_SHORTCUT_LABEL',
+};
+
+const STORAGE_KEYS = {
+  SETTINGS: 'settings',
+};
+
+const DEFAULT_SETTINGS = {
+  showFloatingBar: false,
 };
 
 // ── SVG Icons (inline, no external requests) ──────────────────────────────
@@ -19,7 +29,7 @@ const WARNING_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="
 
 // ── Shadow DOM styles ─────────────────────────────────────────────────────
 
-const OVERLAY_CSS = `
+const UI_CSS = `
   :host {
     all: initial;
   }
@@ -27,6 +37,11 @@ const OVERLAY_CSS = `
   @keyframes ts-spring-up {
     0%   { transform: translateY(20px) scale(0.9); opacity: 0; }
     60%  { transform: translateY(-4px) scale(1.02); opacity: 1; }
+    100% { transform: translateY(0) scale(1); opacity: 1; }
+  }
+
+  @keyframes ts-dock-expand {
+    0%   { transform: translateY(8px) scale(0.85); opacity: 0; }
     100% { transform: translateY(0) scale(1); opacity: 1; }
   }
 
@@ -66,6 +81,106 @@ const OVERLAY_CSS = `
     0%, 100% { box-shadow: 0 20px 40px -10px rgba(14, 165, 233, 0.25); }
     50%      { box-shadow: 0 20px 40px -10px rgba(14, 165, 233, 0.4); }
   }
+
+  .hidden {
+    display: none !important;
+  }
+
+  /* ── Floating dock (Wispr-style) ─────────────────────────────────── */
+
+  .dock-wrapper {
+    position: fixed;
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2147483647;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    pointer-events: none;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Geist', sans-serif;
+  }
+
+  .dock-idle {
+    pointer-events: auto;
+    width: 40px;
+    height: 5px;
+    border-radius: 999px;
+    background: #3f3f46;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    transition: width 0.2s ease, background 0.2s ease, height 0.2s ease;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  }
+
+  .dock-idle:hover {
+    width: 48px;
+    height: 6px;
+    background: #52525b;
+  }
+
+  .dock-expanded {
+    pointer-events: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    animation: ts-dock-expand 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+  }
+
+  .dictate-pill {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border-radius: 999px;
+    background: #09090b;
+    color: #fafafa;
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    user-select: none;
+  }
+
+  .shortcut-label {
+    color: #c4b5fd;
+    font-weight: 500;
+  }
+
+  .dock-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .dock-mic-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 999px;
+    border: none;
+    background: #09090b;
+    color: #fafafa;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    transition: background 0.15s, transform 0.15s;
+  }
+
+  .dock-mic-btn:hover {
+    background: #18181b;
+    transform: scale(1.05);
+  }
+
+  .dock-mic-btn:active {
+    transform: scale(0.97);
+  }
+
+  /* ── Recording overlay ───────────────────────────────────────────── */
 
   .overlay-wrapper {
     position: fixed;
@@ -217,11 +332,6 @@ const OVERLAY_CSS = `
     color: #DC2626;
   }
 
-  .hidden {
-    display: none !important;
-  }
-
-  /* State: listening */
   .state-listening .overlay-pill {
     animation: ts-spring-up 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards,
                ts-pulse-glow 2s ease-in-out infinite;
@@ -232,13 +342,11 @@ const OVERLAY_CSS = `
     color: #6366F1;
   }
 
-  /* State: processing */
   .state-processing .overlay-pill {
     animation: ts-spring-up 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
     box-shadow: 0 20px 40px -10px rgba(99, 102, 241, 0.2);
   }
 
-  /* State: resolution */
   .state-resolution .overlay-pill {
     animation: ts-spring-up 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards,
                ts-success-glow 1.5s ease-in-out 1;
@@ -248,7 +356,6 @@ const OVERLAY_CSS = `
     color: #0EA5E9;
   }
 
-  /* State: error */
   .state-error .overlay-pill {
     animation: ts-spring-up 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards,
                ts-shake 0.4s ease-in-out 0.4s;
@@ -262,12 +369,27 @@ const OVERLAY_CSS = `
 
 // ── Shadow DOM template ──────────────────────────────────────────────────
 
-const OVERLAY_HTML = `
-  <div class="overlay-wrapper">
+const UI_HTML = `
+  <div class="dock-wrapper hidden" id="dock-wrapper">
+    <button class="dock-idle" id="dock-idle" type="button" aria-label="Open dictation menu" title="Click to dictate"></button>
+    <div class="dock-expanded hidden" id="dock-expanded">
+      <div class="dictate-pill">
+        <span>Dictate</span>
+        <span class="shortcut-label" id="shortcut-label"></span>
+      </div>
+      <div class="dock-actions">
+        <button class="dock-mic-btn" id="dock-mic-btn" type="button" aria-label="Start dictation">
+          ${MIC_SVG}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay-wrapper hidden" id="overlay-wrapper">
     <div class="overlay-pill" id="pill">
       <div class="icon-wrapper" id="icon"></div>
       <span class="text-content" id="text"></span>
-      <div class="waveform" id="waveform">
+      <div class="waveform hidden" id="waveform">
         <div class="wf-bar"></div>
         <div class="wf-bar"></div>
         <div class="wf-bar"></div>
@@ -295,6 +417,17 @@ const OVERLAY_HTML = `
 
 let shadowRoot = null;
 let hideTimeout = null;
+let overlayReadySent = false;
+let showFloatingBar = false;
+let dockExpanded = false;
+let outsideClickHandler = null;
+
+let dockWrapper = null;
+let dockIdle = null;
+let dockExpandedEl = null;
+let shortcutLabelEl = null;
+let dockMicBtn = null;
+
 let overlayWrapper = null;
 let iconEl = null;
 let textEl = null;
@@ -304,11 +437,10 @@ let listeningActionsEl = null;
 let retryBtn = null;
 let stopBtn = null;
 let closeBtn = null;
-let overlayReadySent = false;
 
-// ── Init ──────────────────────────────────────────────────────────────────
+// ── Host / dock / overlay ─────────────────────────────────────────────────
 
-function ensureOverlay() {
+function ensureHost() {
   if (shadowRoot) return;
 
   const host = document.createElement('div');
@@ -318,14 +450,22 @@ function ensureOverlay() {
   shadowRoot = host.attachShadow({ mode: 'closed' });
 
   const style = document.createElement('style');
-  style.textContent = OVERLAY_CSS;
+  style.textContent = UI_CSS;
   shadowRoot.appendChild(style);
 
   const container = document.createElement('div');
-  container.innerHTML = OVERLAY_HTML;
-  shadowRoot.appendChild(container.firstElementChild);
+  container.innerHTML = UI_HTML;
+  while (container.firstChild) {
+    shadowRoot.appendChild(container.firstChild);
+  }
 
-  overlayWrapper = shadowRoot.querySelector('.overlay-wrapper');
+  dockWrapper = shadowRoot.getElementById('dock-wrapper');
+  dockIdle = shadowRoot.getElementById('dock-idle');
+  dockExpandedEl = shadowRoot.getElementById('dock-expanded');
+  shortcutLabelEl = shadowRoot.getElementById('shortcut-label');
+  dockMicBtn = shadowRoot.getElementById('dock-mic-btn');
+
+  overlayWrapper = shadowRoot.getElementById('overlay-wrapper');
   iconEl = shadowRoot.getElementById('icon');
   textEl = shadowRoot.getElementById('text');
   waveformEl = shadowRoot.getElementById('waveform');
@@ -334,6 +474,22 @@ function ensureOverlay() {
   retryBtn = shadowRoot.getElementById('retry-btn');
   stopBtn = shadowRoot.getElementById('stop-btn');
   closeBtn = shadowRoot.getElementById('close-btn');
+
+  dockIdle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    expandDock();
+  });
+
+  dockMicBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (dockMicBtn.disabled) return;
+    dockMicBtn.disabled = true;
+    setTimeout(() => {
+      if (dockMicBtn) dockMicBtn.disabled = false;
+    }, 500);
+    collapseDock();
+    sendToBackground({ type: MSG.START_DICTATION });
+  });
 
   stopBtn.addEventListener('click', () => {
     stopBtn.disabled = true;
@@ -346,15 +502,119 @@ function ensureOverlay() {
 
   closeBtn.addEventListener('click', () => {
     overlayReadySent = false;
-    removeOverlay();
+    finishOverlaySession();
     sendToBackground({ type: MSG.DISMISS_OVERLAY });
   });
 
   (document.documentElement || document.body).appendChild(host);
 }
 
-function setState(state, options = {}) {
-  ensureOverlay();
+function showDock() {
+  if (!showFloatingBar) return;
+  ensureHost();
+  dockWrapper.classList.remove('hidden');
+  setDockIdle();
+}
+
+function hideDock() {
+  if (!dockWrapper) return;
+  dockWrapper.classList.add('hidden');
+  collapseDock();
+}
+
+function setDockIdle() {
+  dockExpanded = false;
+  dockIdle.classList.remove('hidden');
+  dockExpandedEl.classList.add('hidden');
+  removeOutsideClickHandler();
+}
+
+async function expandDock() {
+  ensureHost();
+  dockExpanded = true;
+  dockIdle.classList.add('hidden');
+  dockExpandedEl.classList.remove('hidden');
+
+  try {
+    const response = await sendToBackgroundAsync({ type: MSG.GET_SHORTCUT_LABEL });
+    shortcutLabelEl.textContent = response?.label || '';
+  } catch {
+    shortcutLabelEl.textContent = '';
+  }
+
+  addOutsideClickHandler();
+}
+
+function collapseDock() {
+  if (!dockExpanded) return;
+  setDockIdle();
+}
+
+function addOutsideClickHandler() {
+  removeOutsideClickHandler();
+  outsideClickHandler = (e) => {
+    const host = document.getElementById('typestream-host');
+    if (host && e.composedPath().includes(host)) return;
+    collapseDock();
+  };
+  document.addEventListener('click', outsideClickHandler, true);
+}
+
+function removeOutsideClickHandler() {
+  if (outsideClickHandler) {
+    document.removeEventListener('click', outsideClickHandler, true);
+    outsideClickHandler = null;
+  }
+}
+
+function showOverlay() {
+  ensureHost();
+  hideDock();
+  overlayWrapper.classList.remove('hidden');
+}
+
+function hideOverlay() {
+  if (!overlayWrapper) return;
+  overlayWrapper.classList.add('hidden');
+  overlayWrapper.classList.remove('state-listening', 'state-processing', 'state-resolution', 'state-error');
+}
+
+function finishOverlaySession() {
+  clearTimeout(hideTimeout);
+  hideOverlay();
+  overlayReadySent = false;
+  if (showFloatingBar) {
+    showDock();
+  } else {
+    removeHost();
+  }
+}
+
+function removeHost() {
+  clearTimeout(hideTimeout);
+  removeOutsideClickHandler();
+  const host = document.getElementById('typestream-host');
+  if (host) host.remove();
+  shadowRoot = null;
+  dockWrapper = null;
+  dockIdle = null;
+  dockExpandedEl = null;
+  shortcutLabelEl = null;
+  dockMicBtn = null;
+  overlayWrapper = null;
+  iconEl = null;
+  textEl = null;
+  waveformEl = null;
+  errorActionsEl = null;
+  listeningActionsEl = null;
+  retryBtn = null;
+  stopBtn = null;
+  closeBtn = null;
+  dockExpanded = false;
+}
+
+function setOverlayState(state, options = {}) {
+  showOverlay();
   clearTimeout(hideTimeout);
 
   overlayWrapper.classList.remove('state-listening', 'state-processing', 'state-resolution', 'state-error');
@@ -388,7 +648,7 @@ function setState(state, options = {}) {
       overlayWrapper.classList.add('state-resolution');
       iconEl.innerHTML = CHECK_SVG;
       textEl.textContent = options.text || 'Inserted!';
-      hideTimeout = setTimeout(removeOverlay, 1500);
+      hideTimeout = setTimeout(finishOverlaySession, 1500);
       break;
 
     case 'error':
@@ -404,20 +664,29 @@ function setState(state, options = {}) {
   }
 }
 
-function removeOverlay() {
-  clearTimeout(hideTimeout);
-  const host = document.getElementById('typestream-host');
-  if (host) host.remove();
-  shadowRoot = null;
-  overlayWrapper = null;
-  iconEl = null;
-  textEl = null;
-  waveformEl = null;
-  errorActionsEl = null;
-  listeningActionsEl = null;
-  retryBtn = null;
-  stopBtn = null;
-  closeBtn = null;
+// ── Settings ──────────────────────────────────────────────────────────────
+
+async function loadFloatingBarSetting() {
+  try {
+    const data = await chrome.storage.local.get(STORAGE_KEYS.SETTINGS);
+    const settings = { ...DEFAULT_SETTINGS, ...(data[STORAGE_KEYS.SETTINGS] || {}) };
+    applyFloatingBarSetting(settings.showFloatingBar);
+  } catch {
+    applyFloatingBarSetting(false);
+  }
+}
+
+function applyFloatingBarSetting(enabled) {
+  showFloatingBar = enabled;
+  if (enabled) {
+    showDock();
+  } else {
+    collapseDock();
+    hideDock();
+    if (overlayWrapper?.classList.contains('hidden') !== false) {
+      removeHost();
+    }
+  }
 }
 
 // ── Text insertion ────────────────────────────────────────────────────────
@@ -438,7 +707,6 @@ function getInsertionTarget() {
   if (tag === 'input' && INPUT_TYPES.has(type)) return { element: el, kind: 'input' };
   if (isCE) return { element: el, kind: 'contenteditable' };
 
-  // Check for contenteditable ancestor (e.g., rich text editors)
   let parent = el.parentElement;
   while (parent) {
     if (parent.isContentEditable) return { element: el, kind: 'contenteditable-nested' };
@@ -456,7 +724,6 @@ function insertIntoInput(target, text) {
   const after = element.value.substring(end);
   const newValue = before + text + after;
 
-  // Use native value setter for React compatibility
   const nativeSetter =
     Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set ||
     Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
@@ -488,7 +755,6 @@ function insertIntoContentEditable(target, text) {
   const sel = window.getSelection();
   if (!sel) return false;
 
-  // Ensure selection is within the element
   if (!element.contains(sel.anchorNode)) {
     const range = document.createRange();
     range.selectNodeContents(element);
@@ -497,10 +763,8 @@ function insertIntoContentEditable(target, text) {
     sel.addRange(range);
   }
 
-  // Try execCommand first
   if (document.execCommand('insertText', false, text)) return true;
 
-  // Fallback: manual text node insertion
   const range = sel.getRangeAt(0);
   range.deleteContents();
   const textNode = document.createTextNode(text);
@@ -540,7 +804,6 @@ async function copyToClipboard(text) {
   try {
     await navigator.clipboard.writeText(text);
   } catch {
-    // Fallback: execCommand
     const ta = document.createElement('textarea');
     ta.value = text;
     ta.style.cssText = 'position:fixed;left:-9999px;';
@@ -563,6 +826,22 @@ function sendToBackground(message) {
   }
 }
 
+function sendToBackgroundAsync(message) {
+  return new Promise((resolve, reject) => {
+    try {
+      chrome.runtime.sendMessage(message, (response) => {
+        if (chrome.runtime.lastError) {
+          reject(chrome.runtime.lastError);
+        } else {
+          resolve(response);
+        }
+      });
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
 // ── Background message handler ────────────────────────────────────────────
 
 if (!globalThis.__typestreamContentScriptLoaded) {
@@ -570,50 +849,57 @@ if (!globalThis.__typestreamContentScriptLoaded) {
 
   document.getElementById('typestream-host')?.remove();
 
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  switch (msg.type) {
-    case '__typestream_ping__':
-      sendResponse({ ok: true });
-      break;
+  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    switch (msg.type) {
+      case '__typestream_ping__':
+        sendResponse({ ok: true });
+        break;
 
-    case MSG.SHOW_OVERLAY:
-      console.log(LOG_PREFIX, 'SHOW_OVERLAY:', msg.state);
-      setState(msg.state, { text: msg.text, error: msg.error, action: msg.action });
-      if (msg.state === 'listening' && !overlayReadySent) {
-        overlayReadySent = true;
-        sendToBackground({ type: MSG.OVERLAY_READY });
-      } else if (msg.state !== 'listening') {
+      case MSG.SHOW_OVERLAY:
+        console.log(LOG_PREFIX, 'SHOW_OVERLAY:', msg.state);
+        setOverlayState(msg.state, { text: msg.text, error: msg.error, action: msg.action });
+        if (msg.state === 'listening' && !overlayReadySent) {
+          overlayReadySent = true;
+          sendToBackground({ type: MSG.OVERLAY_READY });
+        } else if (msg.state !== 'listening') {
+          overlayReadySent = false;
+        }
+        sendResponse({ received: true });
+        break;
+
+      case MSG.HIDE_OVERLAY:
         overlayReadySent = false;
-      }
-      sendResponse({ received: true });
-      break;
+        finishOverlaySession();
+        sendResponse({ received: true });
+        break;
 
-    case MSG.HIDE_OVERLAY:
-      overlayReadySent = false;
-      removeOverlay();
-      sendResponse({ received: true });
-      break;
-
-    case MSG.INSERT_TEXT: {
-      const inserted = insertText(msg.text);
-      if (!inserted) {
-        copyToClipboard(msg.text).then(() => {
-          setState('resolution', { text: 'Copied to clipboard' });
-        });
-      } else {
-        setState('resolution', { text: 'Inserted!' });
+      case MSG.INSERT_TEXT: {
+        const inserted = insertText(msg.text);
+        if (!inserted) {
+          copyToClipboard(msg.text).then(() => {
+            setOverlayState('resolution', { text: 'Copied to clipboard' });
+          });
+        } else {
+          setOverlayState('resolution', { text: 'Inserted!' });
+        }
+        sendResponse({ inserted });
+        break;
       }
-      sendResponse({ inserted });
-      break;
+
+      default:
+        sendResponse({ received: false });
+        break;
     }
+    return true;
+  });
 
-    default:
-      sendResponse({ received: false });
-      break;
-  }
-  return true;
-});
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !changes[STORAGE_KEYS.SETTINGS]) return;
+    const newSettings = { ...DEFAULT_SETTINGS, ...(changes[STORAGE_KEYS.SETTINGS].newValue || {}) };
+    applyFloatingBarSetting(newSettings.showFloatingBar);
+  });
 
-// Content script loaded and listening for messages
-console.log('[Typestream] Content script loaded on:', window.location.href);
+  void loadFloatingBarSetting();
+
+  console.log('[Typestream] Content script loaded on:', window.location.href);
 }
