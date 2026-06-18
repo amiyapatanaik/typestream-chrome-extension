@@ -203,12 +203,41 @@ function showToast() {
   }, 2000);
 }
 
+// ── Content script injection (activeTab on popup open) ───────────────
+
+const INJECT_CONTENT_SCRIPT = 'INJECT_CONTENT_SCRIPT';
+
+function isInjectableUrl(url) {
+  if (!url) return false;
+  const restricted = ['chrome://', 'chrome-extension://', 'edge://', 'about:', 'devtools://'];
+  return !restricted.some((prefix) => url.startsWith(prefix));
+}
+
+async function injectOnActiveTabIfNeeded() {
+  try {
+    const data = await chrome.storage.local.get('settings');
+    const settings = data.settings || {};
+    if (!settings.showFloatingBar) return;
+
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id || !isInjectableUrl(tab.url)) return;
+
+    await chrome.runtime.sendMessage({
+      type: INJECT_CONTENT_SCRIPT,
+      tabId: tab.id,
+    });
+  } catch {
+    // Popup may close before the response returns.
+  }
+}
+
 // ── Init ────────────────────────────────────────────────────────────
 
 async function init() {
   const shortcut = await getShortcutLabel();
   renderShortcutHint(shortcut);
   loadHistory();
+  void injectOnActiveTabIfNeeded();
 
   settingsBtn.addEventListener('click', () => {
     chrome.tabs.create({ url: chrome.runtime.getURL('onboarding/onboarding.html') });

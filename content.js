@@ -482,17 +482,11 @@ function ensureHost() {
 
   dockMicBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    if (dockMicBtn.disabled) return;
-    dockMicBtn.disabled = true;
-    setTimeout(() => {
-      if (dockMicBtn) dockMicBtn.disabled = false;
-    }, 500);
     collapseDock();
     sendToBackground({ type: MSG.START_DICTATION });
   });
 
   stopBtn.addEventListener('click', () => {
-    stopBtn.disabled = true;
     sendToBackground({ type: MSG.STOP_DICTATION });
   });
 
