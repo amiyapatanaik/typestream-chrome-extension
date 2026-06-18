@@ -1,0 +1,10 @@
+{
+  "appName": {
+    "message": "Typestream",
+    "description": "Extension name"
+  },
+  "appDesc": {
+    "message": "Ultra-low latency voice dictation powered by Typestream. Speak naturally and insert text anywhere in your browser.",
+    "description": "Extension description"
+  }
+}
