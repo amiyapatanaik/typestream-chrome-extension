@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Typestream Settings</title>
+  <link rel="stylesheet" href="onboarding.css">
+</head>
+<body>
+  <main class="settings-container">
+    <!-- Header -->
+    <header class="settings-header">
+      <h1 class="settings-title">Typestream Settings</h1>
+      <p class="settings-subtitle">Configure your API key, shortcuts, and global preferences.</p>
+    </header>
+
+    <!-- Permissions Banner -->
+    <div class="perm-banner" id="perm-banner">
+      <div class="perm-info">
+        <p class="perm-title">Microphone access required</p>
+        <p class="perm-desc" id="perm-desc">Please grant access to start dictating.</p>
+      </div>
+      <button class="perm-btn" id="grant-mic-btn">Grant Access</button>
+    </div>
+
+    <!-- API Key -->
+    <section class="section">
+      <label class="label" for="api-key">Typestream API Key</label>
+      <div class="input-wrapper">
+        <input
+          class="api-key-input"
+          id="api-key"
+          type="password"
+          placeholder="Enter your API key"
+          autocomplete="off"
+        >
+        <span class="status-icon hidden" id="key-status">&#10003;</span>
+      </div>
+      <p class="helper-text">
+        Your key is stored securely in local extension storage.
+        <a href="https://typestream.dev" target="_blank" rel="noopener" class="link">Get your free API key at typestream.dev</a>.
+      </p>
+    </section>
+
+    <!-- Hotkey -->
+    <section class="section">
+      <label class="label">Dictation Shortcut</label>
+      <div class="hotkey-display" id="hotkey-display">
+        <div class="keycaps" id="keycaps">
+          <span class="keycap keycap-loading">Loading...</span>
+        </div>
+        <button type="button" class="hotkey-settings-btn" id="hotkey-settings-btn">
+          Change shortcut
+        </button>
+      </div>
+      <p class="helper-text">
+        Opens Chrome's keyboard shortcut settings. Set scope to <strong>Global</strong> to use dictation from any app.
+      </p>
+    </section>
+
+    <hr class="divider">
+
+    <!-- Preferences -->
+    <section class="section preferences-section">
+      <h2 class="section-heading">Preferences</h2>
+
+      <div class="toggle-row">
+        <div class="toggle-info">
+          <span class="toggle-label">Save dictation history locally</span>
+          <span class="toggle-desc">Transcripts are stored on this device only.</span>
+        </div>
+        <button class="toggle" id="toggle-history" role="switch" aria-checked="true">
+          <span class="toggle-knob"></span>
+        </button>
+      </div>
+
+      <div class="toggle-row">
+        <div class="toggle-info">
+          <span class="toggle-label">Auto-copy to clipboard</span>
+          <span class="toggle-desc">Automatically copy text when no input is focused.</span>
+        </div>
+        <button class="toggle" id="toggle-autocopy" role="switch" aria-checked="true">
+          <span class="toggle-knob"></span>
+        </button>
+      </div>
+
+      <div class="toggle-row">
+        <div class="toggle-info">
+          <span class="toggle-label">Play sounds</span>
+          <span class="toggle-desc">Subtle audio cues on start and success.</span>
+        </div>
+        <button class="toggle" id="toggle-sounds" role="switch" aria-checked="false">
+          <span class="toggle-knob"></span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Danger Zone -->
+    <section class="section">
+      <h2 class="danger-heading">Danger Zone</h2>
+      <button class="danger-btn" id="clear-data-btn">Clear All Local Data</button>
+    </section>
+  </main>
+
+  <script src="onboarding.js"></script>
+</body>
+</html>
