@@ -511,8 +511,11 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
 
 // ── Startup ─────────────────────────────────────────────────────────
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener((details) => {
   void resetExtensionState();
+  if (details.reason === chrome.runtime.OnInstalledReason.INSTALL) {
+    chrome.tabs.create({ url: chrome.runtime.getURL('onboarding/onboarding.html') });
+  }
 });
 
 void resetExtensionState();

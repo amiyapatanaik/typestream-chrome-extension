@@ -11,6 +11,7 @@ const STORAGE_KEYS = {
 };
 
 const keycapsEl = document.getElementById('keycaps');
+const shortcutHelper = document.getElementById('shortcut-helper');
 const hotkeySettingsBtn = document.getElementById('hotkey-settings-btn');
 const apiKeyInput = document.getElementById('api-key');
 const keyStatus = document.getElementById('key-status');
@@ -70,7 +71,17 @@ async function loadShortcut() {
   try {
     const commands = await chrome.commands.getAll();
     const cmd = commands.find((c) => c.name === 'toggle-dictation');
-    renderKeycaps(parseShortcut(cmd?.shortcut || ''));
+    const shortcut = cmd?.shortcut || '';
+    renderKeycaps(parseShortcut(shortcut));
+
+    if (!shortcut) {
+      shortcutHelper.innerHTML =
+        'No shortcut is set yet. Click <strong>Change shortcut</strong> and assign one for "Start or stop voice dictation". ' +
+        'Chrome cannot use <strong>⌘D</strong> or <strong>Ctrl+D</strong> — those are reserved for bookmarks.';
+    } else {
+      shortcutHelper.innerHTML =
+        'Opens Chrome\'s keyboard shortcut settings. Set scope to <strong>Global</strong> to use dictation from any app.';
+    }
   } catch {
     renderKeycaps([]);
   }

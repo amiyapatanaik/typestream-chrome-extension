@@ -42,13 +42,12 @@
   "commands": {
     "toggle-dictation": {
       "suggested_key": {
-        "default": "Ctrl+D",
-        "mac": "Command+D",
-        "windows": "Ctrl+D",
-        "linux": "Ctrl+D"
+        "default": "Ctrl+Shift+D",
+        "mac": "MacCtrl+D",
+        "windows": "Ctrl+Shift+D",
+        "linux": "Ctrl+Shift+D"
       },
-      "description": "Start or stop voice dictation",
-      "global": true
+      "description": "Start or stop voice dictation"
     }
   }
 }

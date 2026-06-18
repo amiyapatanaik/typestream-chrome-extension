@@ -351,3 +351,12 @@ body {
 .danger-btn:hover {
   background: #fef2f2;
 }
+
+/* ── Footer ───────────────────────────────────────────────────────── */
+.settings-footer {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid #f4f4f5;
+  text-align: center;
+  font-size: 13px;
+}
