@@ -23,9 +23,10 @@ const KEEPALIVE_ALARM = 'dictation-keepalive';
 const KEEPALIVE_DELAY_MIN = 0.4; // ~24s; keeps the service worker alive during long recordings
 
 const state = {
-  phase: 'idle', // idle | starting | recording | processing | cancelling
+  phase: 'idle', // idle | starting | recording | processing | cancelling | failed
   tabId: null,
   recordingBlob: null,
+  recordingAudioId: null,
   recordingMimeType: 'audio/webm',
   recordingStartedAt: null,
   startedAt: null,
@@ -64,6 +65,7 @@ async function persistSession() {
       recordingStartedAt: state.recordingStartedAt,
       startedAt: state.startedAt,
       recordingMimeType: state.recordingMimeType,
+      recordingAudioId: state.recordingAudioId,
     },
   });
 }
@@ -89,6 +91,16 @@ async function restoreSession() {
           action: 'retry',
         }, saved.tabId);
       }
+      return;
+    }
+
+    if (saved.phase === 'failed') {
+      log('Restored failed session, audioId:', saved.recordingAudioId || '(none)');
+      state.phase = 'failed';
+      state.tabId = saved.tabId;
+      state.recordingAudioId = saved.recordingAudioId || null;
+      state.recordingMimeType = saved.recordingMimeType || 'audio/webm';
+      state.recordingStartedAt = saved.recordingStartedAt;
       return;
     }
 
@@ -190,6 +202,7 @@ async function handleOffscreenMessage(msg) {
       }
 
       state.recordingBlob = blob;
+      state.recordingAudioId = msg.payload?.audioId || null;
       state.recordingMimeType = msg.payload?.mimeType || blob.type || 'audio/webm';
       log('Audio blob:', state.recordingBlob.size, 'bytes,', state.recordingMimeType);
 
@@ -240,11 +253,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === MSG.RETRY_DICTATION) {
-    log('RETRY_DICTATION');
+    log('RETRY_DICTATION, phase:', state.phase);
     sendResponse({ received: true });
-    if (state.phase !== 'idle') return true;
     const tabId = state.tabId || sender.tab?.id;
-    if (tabId) {
+    if (state.phase === 'failed') {
+      void retryTranscription().catch((err) => log('RETRY_DICTATION error:', err.message));
+    } else if (state.phase === 'idle' && tabId) {
       void startDictation(tabId).catch((err) => log('RETRY_DICTATION error:', err.message));
     }
     return true;
@@ -355,9 +369,6 @@ async function loadAudioFromPayload(payload) {
 
   if (typeof payload.audioId === 'string' && payload.audioId.length > 0) {
     const blob = await loadRecordingBlob(payload.audioId);
-    await deleteRecordingBlob(payload.audioId).catch((err) => {
-      log('Failed to delete stored recording:', err.message);
-    });
     if (!blob || blob.size === 0) {
       log('Missing IndexedDB audio for id:', payload.audioId);
       return null;
@@ -472,14 +483,7 @@ function scheduleProcessingTimeout() {
   processingTimeout = setTimeout(() => {
     if (state.phase !== 'processing') return;
     log('Processing timeout');
-    void (async () => {
-      await sendToTab(MSG.SHOW_OVERLAY, {
-        state: OVERLAY_STATES.ERROR,
-        error: 'Transcription timed out. Try again.',
-        action: 'retry',
-      });
-      await cleanup();
-    })();
+    void enterFailedState('Transcription timed out. Try again.');
   }, 60_000);
 }
 
@@ -487,12 +491,11 @@ async function startDictation(tabId) {
   if (state.phase !== 'idle') return;
   log('startDictation on tab', tabId);
 
+  await releaseRecording();
+
   state.phase = 'starting';
   state.tabId = tabId;
   state.startedAt = Date.now();
-  state.recordingBlob = null;
-  state.recordingMimeType = 'audio/webm';
-  state.recordingStartedAt = null;
   state.transcript = null;
 
   void persistSession();
@@ -602,19 +605,72 @@ async function stopDictation() {
   await stopActiveRecording();
 }
 
+async function ensureRecordingBlob() {
+  if (state.recordingBlob?.size > 0) return state.recordingBlob;
+  if (!state.recordingAudioId) return null;
+
+  const blob = await loadRecordingBlob(state.recordingAudioId);
+  if (blob?.size > 0) {
+    state.recordingBlob = blob;
+    return blob;
+  }
+  return null;
+}
+
+async function retryTranscription() {
+  if (state.phase !== 'failed') return;
+  const tabId = state.tabId;
+  if (!tabId) return;
+
+  log('retryTranscription');
+
+  const apiKey = await getApiKey();
+  if (!apiKey) {
+    await sendToTab(MSG.SHOW_OVERLAY, {
+      state: OVERLAY_STATES.ERROR,
+      error: 'No API key configured.',
+      action: 'settings',
+    }, tabId);
+    return;
+  }
+
+  const blob = await ensureRecordingBlob();
+  if (!blob) {
+    log('Retry audio missing, starting new recording');
+    await releaseRecording();
+    state.phase = 'idle';
+    state.tabId = tabId;
+    void persistSession();
+    await startDictation(tabId);
+    return;
+  }
+
+  state.phase = 'processing';
+  void persistSession();
+  syncKeepalive();
+  await sendToTab(MSG.SHOW_OVERLAY, { state: OVERLAY_STATES.PROCESSING });
+  scheduleProcessingTimeout();
+  await finishDictation();
+}
+
 async function finishDictation() {
   if (state.phase !== 'processing' || finishInFlight) return;
   finishInFlight = true;
 
   try {
     const apiKey = await getApiKey();
+    const blob = await ensureRecordingBlob();
+    if (!blob) {
+      throw new ApiError('RECORDING_UNAVAILABLE', 'Recording no longer available. Please record again.');
+    }
+
     const durationMs = state.recordingStartedAt
       ? Date.now() - state.recordingStartedAt
       : 0;
-    log('Transcribing:', state.recordingBlob?.size, 'bytes,', durationMs, 'ms,', state.recordingMimeType);
+    log('Transcribing:', blob.size, 'bytes,', durationMs, 'ms,', state.recordingMimeType);
     const text = await transcribeRecording(
       apiKey,
-      state.recordingBlob,
+      blob,
       state.recordingMimeType,
       durationMs,
     );
@@ -628,23 +684,50 @@ async function finishDictation() {
       log('History save failed (transcription succeeded):', historyErr.message);
     }
     log('Saved');
+    await releaseRecording();
+    await cleanup();
   } catch (err) {
     log('finishDictation error:', err.message);
     const message = err instanceof ApiError ? err.message : err.message;
-    await sendToTab(MSG.SHOW_OVERLAY, { state: OVERLAY_STATES.ERROR, error: message, action: 'retry' });
+    await enterFailedState(message);
   } finally {
     finishInFlight = false;
-    await cleanup();
   }
+}
+
+async function releaseRecording() {
+  if (state.recordingAudioId) {
+    await deleteRecordingBlob(state.recordingAudioId).catch((err) => {
+      log('Failed to delete stored recording:', err.message);
+    });
+  }
+  state.recordingBlob = null;
+  state.recordingAudioId = null;
+  state.recordingMimeType = 'audio/webm';
+  state.recordingStartedAt = null;
+}
+
+async function enterFailedState(errorMessage) {
+  clearProcessingTimeout();
+  state.phase = 'failed';
+  state.transcript = null;
+  micBootPromise = null;
+  micBootStarted = false;
+  finishInFlight = false;
+  void persistSession();
+  syncKeepalive();
+  await sendToTab(MSG.SHOW_OVERLAY, {
+    state: OVERLAY_STATES.ERROR,
+    error: errorMessage,
+    action: 'retry',
+  });
 }
 
 async function cleanup() {
   clearProcessingTimeout();
+  await releaseRecording();
   state.phase = 'idle';
   state.tabId = null;
-  state.recordingBlob = null;
-  state.recordingMimeType = 'audio/webm';
-  state.recordingStartedAt = null;
   state.startedAt = null;
   state.transcript = null;
   micBootPromise = null;
@@ -656,11 +739,9 @@ async function cleanup() {
 
 async function resetExtensionState() {
   clearProcessingTimeout();
+  await releaseRecording();
   state.phase = 'idle';
   state.tabId = null;
-  state.recordingBlob = null;
-  state.recordingMimeType = 'audio/webm';
-  state.recordingStartedAt = null;
   state.startedAt = null;
   state.transcript = null;
   micBootPromise = null;
