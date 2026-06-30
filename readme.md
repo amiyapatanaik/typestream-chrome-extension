@@ -48,7 +48,7 @@ With our Pay-As-You-Go (PAYG) model, $1 of credit can last you weeks. It is insa
 
 ### Option A: Install from the Chrome Web Store
 
-*(Link coming soon!)*
+[Download from Chrome Store (Recommended)](https://chromewebstore.google.com/detail/typestream-voice-ai-speec/nlkjhlfmglceeocpfhkmdggljnhklhhl?authuser=0&hl=en)
 
 ### Option B: Build from Source
 
